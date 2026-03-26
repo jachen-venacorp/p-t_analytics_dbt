@@ -1,0 +1,13 @@
+snapshots:
+  - name: sum_vcp_tenant_info_snapshot
+    resource_path: ref() | source()
+    config:
+      database: <string>
+      schema: <string>
+      unique_key: dc_tenant_id
+      strategy: timestamp | check
+      updated_at: <column_name>
+      check_cols: [<column_name>] | all
+      snapshot_meta_column_names: {<dictionary>}
+      hard_deletes: string
+      dbt_valid_to_current: <string>

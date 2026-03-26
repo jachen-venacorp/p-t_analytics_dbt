@@ -1,0 +1,15 @@
+version: 2
+sources:
+  - name: prod         # logical name you choose
+    database: PROD_HARMONIZED        # actual Snowflake database
+    schema: PRODUCT        # or whatever schema it's in
+    tables: 
+      - name: tenant_prof
+      - name: user_api_activity
+      - name: vw_user_prof_eml_incld
+      
+  - name: mtserver            # logical name you choose
+    database: PROD_RAW        # actual Snowflake database
+    schema: MT_SERVER        # or whatever schema it's in
+    tables:
+      - name: MTSERVER_TEMPLATE_METRICS_STAGING
