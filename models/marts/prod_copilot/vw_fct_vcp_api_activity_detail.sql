@@ -40,6 +40,7 @@ user_info as
 select 
 api.data_cntr_cd as vena_hub,
 api.tenant_id,
+concat(api.data_cntr_cd,'.',api.tenant_id) as vh_tenant_id,
 tenant_nm,
 api.user_id,
 user_type as user_license_type,
