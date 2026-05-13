@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: vw_fct_vcp_prompt_activity_detail
+  - name: vw_fct_api_activity_detail
     description: "copilot api data"
     columns:
       - name: vh_tenant_id
