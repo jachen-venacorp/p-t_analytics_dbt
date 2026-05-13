@@ -1,0 +1,15 @@
+# ~/.dbt/profiles.yml
+Prod_analytics_production:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "rm38333.ca-central-1.aws" 
+      user: JACHEN@VENACORP.COM
+      role: "PRODUCT_POWER_USER_READ"
+      database: "PROD_RAW"
+      warehouse: "PRODUCT_POWER_USER_READ_WH"
+      schema: "PRODUCT_POWER_USER"
+      threads: 4
+      authenticator: externalbrowser
+      client_session_keep_alive: true
