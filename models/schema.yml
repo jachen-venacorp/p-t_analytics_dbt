@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: vw_fct_vcp_api_activity_detail
+  - name: vw_fct_copilot_ai_api_activity_detail
     description: "copilot api data"
     columns:
       - name: vh_tenant_id
@@ -9,17 +9,31 @@ models:
         data_tests:
           - not_null
 
-  - name: vw_dim_production_customer_usage_info
-    description: "master table for product usage at the customer level"
+  - name: vw_dim_template_metrics
+    description: "refined version of template galaxy dataset"
     columns:
-      - name: vena_hub_tenant_id
+      - name: tenant_id
         description: "The primary key for this table"
         data_tests:
-          - unique
           - not_null
-
-
       
           ## fct_addins_desktop_refresh_activity
           ## fct_addins_365_refresh_activity 
           ##
+  - name: int_models_pcs_list
+    description: >
+      Mapping table identifying whether a model belongs to the predefined
+      PCS model list based on MT Server model metadata.
+
+    columns:
+      - name: vh_tenant_id
+        description: Concatenation of datacenter and tenant_id.
+        tests:
+          - not_null
+
+ ##   tests:
+ ##     - dbt_utils.unique_combination_of_columns:
+ ##         arguments:
+ ##           combination_of_columns:
+ ##             - vh_tenant_id
+ ##             - id
