@@ -31,12 +31,14 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   Prod_analytics_production:
-    drafts:
+    model_drafts:
       +enabled: false
     marts:
       +materialized: incremental 
     staging:
       +materialized: view
+    intermediate:
+      +materialized: table
  
     
   
