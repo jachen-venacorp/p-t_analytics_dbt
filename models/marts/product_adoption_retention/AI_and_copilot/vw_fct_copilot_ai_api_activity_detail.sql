@@ -112,7 +112,7 @@ GENERAL_COPILOT_ACTIVITY AS
              AND api.request_endpoint_nm = '/api/ai/topics/{p}/conversations/{p}/messages/{p}/templateAdhoc/'
                 THEN 'reporting agent'
 
-            WHEN api.client_context_hdr_nm ILIKE '%mql_agent%'
+            WHEN (api.client_context_hdr_nm ILIKE '%mql_agent%' or api.client_context_hdr_nm ILIKE '%query%')
              AND api.request_endpoint_nm = '/api/ai/topics/{p}/conversations/{p}/chat/'
                 THEN 'MQL agent prompt'
 
