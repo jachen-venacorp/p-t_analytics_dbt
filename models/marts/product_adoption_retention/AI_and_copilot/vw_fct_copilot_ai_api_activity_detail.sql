@@ -1,4 +1,20 @@
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
+/* =========================================================================
+   GRAIN:
+   - One row per AI related interaction / estimated MCP prompt event:
+     account_id > vh_tenant_id > action_timestamp > prompt_number (MCP only)
+
+   Business Adjustments:
+   - FY27 Excelerate (May 2026) demo tenant prompts injected
+   - MCP estimated prompts injected via gaps-and-islands methodology
+
+   NOTES:
+   - MCP prompts are estimated by clustering API calls occurring within
+     5 seconds of each other
+   - not_customer_user = TRUE when either:
+       - API call was impersonated
+       - User is identified as consultant/support/internal
+======================================================================== */
 
 WITH PROD_TENANT_INFO AS
 (
@@ -6,59 +22,83 @@ WITH PROD_TENANT_INFO AS
         tenant_id,
         tenant_nm,
         account_id,
-        data_cntr_cd
+        data_cntr_cd,
+        tenant_enbld_status_nm
     FROM PROD_HARMONIZED.PRODUCT.TENANT_PROF
     WHERE CRNT_RCRD_IND = 'Y'
       AND tenant_typ_nm IN ('PRODUCTION')
       AND organization_typ_nm = 'CUSTOMER'
-      AND tenant_enbld_status_nm = 'ENABLED'
-            -- remove demo tenants
+
       AND NOT (
              COALESCE(tenant_nm, '') ILIKE '%sparkcycle%'
           OR COALESCE(tenant_nm, '') ILIKE '%spark cycle%'
-          OR COALESCE(tenant_nm, '') ILIKE '%demo%')
+          OR COALESCE(tenant_nm, '') ILIKE '%demo%'
+      )
+
+    UNION ALL
+
+    SELECT
+        tenant_id,
+        CONCAT('EXCELERATE 2026','.',tenant_nm) AS tenant_nm,
+        account_id,
+        data_cntr_cd,
+        tenant_enbld_status_nm
+    FROM PROD_HARMONIZED.PRODUCT.TENANT_PROF
+    WHERE CRNT_RCRD_IND = 'Y'
+      AND tenant_nm IN (
+            'Admin@venacopilot10.vena.io',
+            'Admin@venacopilot13.vena.io',
+            'Admin@venacopilot23.vena.io',
+            'Admin@venacopilot11.vena.io',
+            'Admin@venacopilot21.vena.io',
+            'Admin@venacopilot31.vena.io'
+      )
 ),
 
 USER_INFO AS
 (
     SELECT
-        tenant_dc,
-        user_id,
+        u.tenant_dc,
+        u.user_id,
 
         CASE
             WHEN (
-                login_email ILIKE '%@vena%.com'
-                OR ntfctn_email ILIKE '%@vena%.com'
+                u.login_email ILIKE '%@vena%.com'
+                OR u.ntfctn_email ILIKE '%@vena%.com'
 
-                -- admin@ SSO consultant accounts
                 OR (
-                    last_impersonation_login_dt IS NOT NULL
-                    AND admin_access_ind = 'Y'
-                    AND login_email ILIKE 'admin@%'
-                    AND login_email NOT ILIKE '%@vena%.com'
+                    u.last_impersonation_login_dt IS NOT NULL
+                    AND u.admin_access_ind = 'Y'
+                    AND u.login_email ILIKE 'admin@%'
+                    AND u.login_email NOT ILIKE '%@vena%.com'
                 )
 
-                OR built_in_admin_accnt = 'Y'
+                OR u.built_in_admin_accnt = 'Y'
             )
             THEN 'Y'
             ELSE NULL
         END AS consultant_login,
 
         CASE
-            WHEN admin_access_ind = 'Y'
-              OR mdlr_access_ind = 'Y'
-              OR mngr_access_ind = 'Y'
+            WHEN u.admin_access_ind = 'Y'
+              OR u.mdlr_access_ind = 'Y'
+              OR u.mngr_access_ind = 'Y'
                 THEN 'power user'
 
-            WHEN admin_access_ind = 'N'
-             AND mdlr_access_ind = 'N'
-             AND mngr_access_ind = 'N'
-             AND cntrbtr_access_ind = 'Y'
+            WHEN u.admin_access_ind = 'N'
+             AND u.mdlr_access_ind = 'N'
+             AND u.mngr_access_ind = 'N'
+             AND u.cntrbtr_access_ind = 'Y'
                 THEN 'business user'
         END AS user_type
 
-    FROM PROD_HARMONIZED.PRODUCT.VW_USER_PROF_EML_INCLD
-    WHERE crnt_rcrd_ind = 'Y'
+    FROM PROD_HARMONIZED.PRODUCT.VW_USER_PROF_EML_INCLD u
+
+    INNER JOIN PROD_TENANT_INFO t
+        ON u.tenant_dc = CONCAT(t.data_cntr_cd,'.',t.tenant_id)
+
+    WHERE u.crnt_rcrd_ind = 'Y'
+      AND t.tenant_nm NOT ILIKE '%Excelerate%'
 ),
 
 /* =========================================================
@@ -69,24 +109,41 @@ GENERAL_COPILOT_ACTIVITY AS
 (
     SELECT
         api.data_cntr_cd AS vena_hub,
+
         api.tenant_id,
+
         CONCAT(api.data_cntr_cd, '.', api.tenant_id) AS vh_tenant_id,
+
         t.tenant_nm,
+
+        tenant_enbld_status_nm,
+
         api.user_id,
 
         u.user_type AS user_license_type,
-        u.consultant_login AS is_user_consultant_or_support,
+
+        u.consultant_login,
+
+        api.user_imprsntd_ind,
+
+        CASE
+            WHEN api.user_imprsntd_ind = 'Y'
+              OR u.consultant_login = 'Y'
+                THEN TRUE
+            ELSE FALSE
+        END AS not_customer_user,
 
         t.account_id AS salesforce_account_id,
 
         NULL AS prompt_number,
 
-        request_endpoint_nm AS api_endpoint_name,
-        request_method_cd AS post_or_get,
+        api.request_endpoint_nm AS api_endpoint_name,
 
-        request_end_dts AS action_timestamp,
+        api.request_method_cd AS post_or_get,
 
-        client_context_hdr_nm AS client_context_metadata,
+        api.request_end_dts AS action_timestamp,
+
+        api.client_context_hdr_nm AS client_context_metadata,
 
         CASE
             WHEN api.user_agent ILIKE '%teams%'
@@ -112,7 +169,10 @@ GENERAL_COPILOT_ACTIVITY AS
              AND api.request_endpoint_nm = '/api/ai/topics/{p}/conversations/{p}/messages/{p}/templateAdhoc/'
                 THEN 'reporting agent'
 
-            WHEN (api.client_context_hdr_nm ILIKE '%mql_agent%' or api.client_context_hdr_nm ILIKE '%query%')
+            WHEN (
+                    api.client_context_hdr_nm ILIKE '%mql_agent%'
+                    OR api.client_context_hdr_nm ILIKE '%query%'
+                 )
              AND api.request_endpoint_nm = '/api/ai/topics/{p}/conversations/{p}/chat/'
                 THEN 'MQL agent prompt'
 
@@ -158,11 +218,7 @@ GENERAL_COPILOT_ACTIVITY AS
             )
       )
 
-      AND api.user_imprsntd_ind = 'N'
       AND api.request_status_cd = '200'
-
-      -- remove consultants / support users
-      AND u.consultant_login IS NULL
 ),
 
 /* =========================================================
@@ -176,6 +232,7 @@ MCP_BASE_API AS
         t.account_id,
 
         api.tenant_id,
+        tenant_enbld_status_nm,
         api.data_cntr_cd,
         api.user_id,
 
@@ -197,22 +254,10 @@ MCP_BASE_API AS
         ON t.data_cntr_cd = api.data_cntr_cd
        AND t.tenant_id = api.tenant_id
 
-    LEFT JOIN USER_INFO u
-        ON CONCAT(api.data_cntr_cd, '.', api.tenant_id) = u.tenant_dc
-       AND api.user_id = u.user_id
-
     WHERE api.request_end_dts >= '2026-02-01'::TIMESTAMP
       AND api.request_endpoint_nm ILIKE '%internal/mcp%'
-      AND api.user_imprsntd_ind = 'N'
       AND api.request_status_cd = '200'
-
-      -- remove consultants / support users
-      AND u.consultant_login IS NULL
 ),
-
-/* =========================================================
-   MCP TIMESTAMP GAPS
-========================================================= */
 
 MCP_GAPS AS
 (
@@ -226,10 +271,6 @@ MCP_GAPS AS
 
     FROM MCP_BASE_API
 ),
-
-/* =========================================================
-   MCP ISLAND DETECTION
-========================================================= */
 
 MCP_ISLANDS AS
 (
@@ -252,10 +293,6 @@ MCP_ISLANDS AS
     FROM MCP_GAPS
 ),
 
-/* =========================================================
-   LABEL EACH MCP PROMPT CLUSTER
-========================================================= */
-
 MCP_LABELED AS
 (
     SELECT
@@ -270,19 +307,16 @@ MCP_LABELED AS
     FROM MCP_ISLANDS
 ),
 
-/* =========================================================
-   MCP PROMPT CLUSTER SUMMARY
-========================================================= */
-
 MCP_CLUSTER_BASE AS
 (
     SELECT
         data_cntr_cd,
         tenant_id,
+        tenant_enbld_status_nm,
         tenant_nm,
         account_id,
         user_id,
-
+        user_imprsntd_ind,
         prompt_number,
 
         MIN(request_start_dts) AS first_request_start_dts,
@@ -301,15 +335,13 @@ MCP_CLUSTER_BASE AS
     GROUP BY
         data_cntr_cd,
         tenant_id,
+        tenant_enbld_status_nm,
         tenant_nm,
         account_id,
         user_id,
+        user_imprsntd_ind,
         prompt_number
 ),
-
-/* =========================================================
-   MCP ENDPOINT COUNTS
-========================================================= */
 
 MCP_ENDPOINT_COUNTS AS
 (
@@ -332,10 +364,6 @@ MCP_ENDPOINT_COUNTS AS
         prompt_number,
         request_endpoint_nm
 ),
-
-/* =========================================================
-   MCP ENDPOINT COUNTS OBJECT
-========================================================= */
 
 MCP_ENDPOINT_COUNTS_OBJECT AS
 (
@@ -374,11 +402,22 @@ MCP_PROMPT_ACTIVITY AS
 
         c.tenant_nm,
 
+        tenant_enbld_status_nm,
+
         c.user_id,
 
         u.user_type AS user_license_type,
 
-        u.consultant_login AS is_user_consultant_or_support,
+        u.consultant_login,
+
+        c.user_imprsntd_ind,
+
+        CASE
+            WHEN c.user_imprsntd_ind = 'Y'
+              OR u.consultant_login = 'Y'
+                THEN TRUE
+            ELSE FALSE
+        END AS not_customer_user,
 
         c.account_id AS salesforce_account_id,
 
@@ -418,10 +457,10 @@ MCP_PROMPT_ACTIVITY AS
     FROM MCP_CLUSTER_BASE c
 
     LEFT JOIN MCP_ENDPOINT_COUNTS_OBJECT o
-        ON  c.data_cntr_cd = o.data_cntr_cd
-        AND c.tenant_id = o.tenant_id
-        AND c.user_id = o.user_id
-        AND c.prompt_number = o.prompt_number
+        ON c.data_cntr_cd = o.data_cntr_cd
+       AND c.tenant_id = o.tenant_id
+       AND c.user_id = o.user_id
+       AND c.prompt_number = o.prompt_number
 
     LEFT JOIN USER_INFO u
         ON CONCAT(c.data_cntr_cd, '.', c.tenant_id) = u.tenant_dc
