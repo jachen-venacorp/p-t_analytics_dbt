@@ -14,11 +14,12 @@ WITH prod_tenant_info AS
     WHERE crnt_rcrd_ind = 'Y'
       AND tenant_typ_nm IN ('PRODUCTION')
       AND organization_typ_nm = 'CUSTOMER'
-     -- AND tenant_enbld_status_nm = 'ENABLED'
+     AND tenant_enbld_status_nm = 'ENABLED'
       AND NOT (
              COALESCE(tenant_nm, '') ILIKE '%sparkcycle%'
           OR COALESCE(tenant_nm, '') ILIKE '%spark cycle%'
           OR COALESCE(tenant_nm, '') ILIKE '%demo%'
+          OR COALESCE(tenant_nm, '') ILIKE '%vena%'
       )
 ),
 
@@ -106,7 +107,7 @@ tenant_summary AS
 
         FALSE AS ai_model_system_generated
 
-    FROM PROD_RAW.PRODUCT_POWER_USER.VW_FCT_COPILOT_AI_API_ACTIVITY_DETAIL
+    FROM {{ ref('vw_fct_copilot_ai_api_activity_detail') }}
 
 --    WHERE action_timestamp IS NOT NULL
 
@@ -223,7 +224,7 @@ SELECT
     COALESCE(ts.mql_agent_prompts, 0) AS query_agent_prompts,
     COALESCE(ts.planning_agent_prompts, 0) AS planning_agent_prompts,
     COALESCE(ts.mcp_prompts, 0) AS mcp_prompts,
-    COALESCE(ts."Adhoc reports generated", 0) AS Adhoc_reports_generated
+    COALESCE(ts.Adhoc_reports_generated, 0) AS Adhoc_reports_generated
 
 FROM prod_tenant_info p
 

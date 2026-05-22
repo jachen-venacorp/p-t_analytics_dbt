@@ -4,6 +4,12 @@
    - One row per AI related interaction / estimated MCP prompt event:
      account_id > vh_tenant_id > action_timestamp > prompt_number (MCP only)
 
+Inclusion/Exclusion Parameters:
+- Non-prompt API requests included
+- Both non-customer users and customer users included, with a T/F flag
+- Disabled/deleted production tenants included for yearly prompt targets
+- Demo tenants used for Excelerate included with special label
+   
    Business Adjustments:
    - FY27 Excelerate (May 2026) demo tenant prompts injected
    - MCP estimated prompts injected via gaps-and-islands methodology
@@ -33,6 +39,7 @@ WITH PROD_TENANT_INFO AS
              COALESCE(tenant_nm, '') ILIKE '%sparkcycle%'
           OR COALESCE(tenant_nm, '') ILIKE '%spark cycle%'
           OR COALESCE(tenant_nm, '') ILIKE '%demo%'
+          OR COALESCE(tenant_nm, '') ILIKE '%vena%'
       )
 
     UNION ALL
@@ -205,7 +212,7 @@ GENERAL_COPILOT_ACTIVITY AS
     WHERE TO_DATE(api.request_end_dts) > '2024-02-01'
 
       AND (
-            api.request_endpoint_nm ILIKE '%api/ai/topics/{p}/conversations/{p}/chat/%'
+            api.request_endpoint_nm = '/api/ai/topics/{p}/conversations/{p}/chat/'
 
             OR (
                 api.request_method_cd = 'GET'
