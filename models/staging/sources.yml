@@ -14,3 +14,12 @@ sources:
     tables:
       - name: MTSERVER_TEMPLATE_METRICS_STAGING
       - name: mtserver_models_staging
+
+  - name: product_team_analytics
+    database: PROD_HARMONIZED
+    schema: PRODUCT_TEAM_ANALYTICS
+
+    tables:
+      - name: fct_linearb_measurement
+      - name: dim_linearb_user
+      - name: dim_linearb_user_team
