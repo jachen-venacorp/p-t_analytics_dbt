@@ -1,6 +1,58 @@
 
 {{ config(materialized = 'view') }}
 
+/* =========================================================================
+   PURPOSE:
+   - Provides a tenant-level summary of Copilot adoption from both product usage and PS POVs
+   - Designed to support cross functional adoption efforts
+   
+   GRAIN:
+   - One row per production tenant:
+     account_id > vh_tenant_id > summary metrics
+
+   END AUDIENCE: Cross functional
+   - Product (Gen AI) + PS (New implementation consultants and EMS) + POD (if active)
+
+   MAJOR QUESTIONS & TOPICS ADDRESSED:
+   - How many new customers adopted CoPilot? What agents/products?
+   - How many prompts were submitted by Vena employees instead of customer users?
+   - Which PS projects include Copilot coaching / meeting tasks?
+
+   WARNINGS BASED ON BUSINESS CONTEXT:
+   - Accounts with a CoPilot coaching / meeting task with no prompts by Vena employee or customer
+
+   INCLUSION / EXCLUSION PARAMETERS:
+   - Includes only current production customer tenants
+   - Excludes demo, Vena, SparkCycle, and Spark Cycle tenants by tenant name
+   - Includes tenants even if they have zero Copilot prompt activity
+   - Includes only active users when counting Copilot permissions
+   - Includes only PATH, PATH+, and Custom PS project cohorts
+   - Excludes PS projects marked as "do not"
+   - Includes earliest qualifying PS project per account only
+   - Includes Copilot coaching / meeting stories from PS story info
+
+   LIMITATIONS & EDGE CASES:
+   Reporting agent and analytics agent subtraction issue:
+   - Due to how reporting and analytics agent totals are calculated, there could be some edge cases
+   - Due to tracking issues, analytics agent may end up negative for certain refreshes 
+   - Report generation endpoints will exist when an accompanying /chat endpoint call doesn't
+
+   BUSINESS ADJUSTMENTS:
+   - Vena / internal usage is separated into total_prompts_by_vena
+   - Reporting agent activity is separated as ad hoc reports generated
+   - Analytics agent prompts are adjusted by subtracting reporting agent activity
+   - Missing activity / permission / model flags are defaulted to zero or FALSE
+
+   PENDING CHANGES:
+   - Accurately depict system generated AI models
+
+   NOTES:
+   - This model summarizes usage from vw_fct_copilot_ai_api_activity_detail
+   - not_customer_user is inherited from the upstream activity detail model
+   - current_implementation = TRUE when project kickoff has occurred but PS go-live has not yet occurred
+   - ai_model_system_generated is currently hardcoded to FALSE
+======================================================================== */
+
 WITH prod_tenant_info AS
 (
     SELECT
@@ -99,13 +151,14 @@ tenant_summary AS
         IFF(
             COUNT_IF(
                 interaction_type = 'AI model creation'
-                AND not_customer_user = FALSE
+                --can include both consultants or customers
+                --AND not_customer_user = FALSE
             ) > 0,
             TRUE,
             FALSE
         ) AS ai_model_user_created,
 
-        FALSE AS ai_model_system_generated
+        --FALSE AS ai_model_system_generated
 
     FROM {{ ref('vw_fct_copilot_ai_api_activity_detail') }}
 
@@ -191,13 +244,15 @@ SELECT
     a.account_nm,
     p.tenant_nm,
     p.tenant_id,
+    p.data_cntr_cd as vena_hub,
     p.vh_tenant_id,
 
     COALESCE(a.vena_id, ps.vena_id) AS vena_id,
-
+--PS project level fields
     ps.project_nm,
     ps.practice_mngr_nm,
     ps.project_mgr_nm,
+    ps.vena_project_cd,
     ps.delivered_by_nm,
     ps.cohort_nm,
     ps.srvcs_dlvrd_nms,
@@ -205,7 +260,7 @@ SELECT
     ps.go_live_dt AS ps_project_go_live_dt,
     ps.project_close_dt,
     ps.current_implementation,
-
+--PS task level fields
     c.stry_title,
     c.percentage_complete,
     c.state,
@@ -215,7 +270,7 @@ SELECT
     COALESCE(tcp.num_copilot_permissions_assigned, 0) AS num_copilot_permissions_assigned,
 
     COALESCE(ts.ai_model_user_created, FALSE) AS ai_model_user_created,
-    COALESCE(ts.ai_model_system_generated, FALSE) AS ai_model_system_generated,
+--    COALESCE(ts.ai_model_system_generated, FALSE) AS ai_model_system_generated,
 
     COALESCE(ts.total_prompts_by_vena, 0) AS total_prompts_by_vena,
 

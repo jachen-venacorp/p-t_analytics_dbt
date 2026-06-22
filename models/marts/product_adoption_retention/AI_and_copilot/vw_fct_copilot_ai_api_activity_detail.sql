@@ -1,8 +1,12 @@
 {{ config(materialized='table') }}
 /* =========================================================================
    GRAIN:
-   - One row per AI related interaction / estimated MCP prompt event:
-     account_id > vh_tenant_id > action_timestamp > prompt_number (MCP only)
+   - One row per AI related interaction:
+     account_id > vh_tenant_id > action_timestamp > AI related interaction
+
+    END AUDIENCE: Data Professionals
+
+    MAJOR QUESTIONS & TOPICS ADDRESSED
 
 Inclusion/Exclusion Parameters:
 - Non-prompt API requests included
@@ -14,6 +18,10 @@ Inclusion/Exclusion Parameters:
    - FY27 Excelerate (May 2026) demo tenant prompts injected
    - MCP estimated prompts injected via gaps-and-islands methodology
 
+   Pending Changes:
+   - Accurately depict system generated AI models
+   - Distinguish different channels in which reporting agent prompts are made 
+   
    NOTES:
    - MCP prompts are estimated by clustering API calls occurring within
      5 seconds of each other
@@ -166,8 +174,8 @@ GENERAL_COPILOT_ACTIVITY AS
 
             WHEN api.request_method_cd = 'POST'
              AND api.request_endpoint_nm = '/api/ai/topics/'
+             AND api.client_context_hdr_nm is null 
                 THEN 'AI model creation'
-
             ELSE 'prompting/question'
         END AS interaction_type,
 
